@@ -50,18 +50,14 @@ const char* TaskSystemParallelSpawn::name() {
 }
 
 TaskSystemParallelSpawn::TaskSystemParallelSpawn(int num_threads): ITaskSystem(num_threads) {
-    //
-    // TODO: CS149 student implementations may decide to perform setup
-    // operations (such as thread pool construction) here.
-    // Implementations are free to add new class member variables
-    // (requiring changes to tasksys.h).
-    //
     max_threads_ = num_threads;
 }
 
 TaskSystemParallelSpawn::~TaskSystemParallelSpawn() {}
 
 
+//Function to be run by individual threads 
+//Continuously runs tasks until all tasks are complete
 void TaskSystemParallelSpawn::doWork(IRunnable* runnable) {
     while (current_task_num_ < total_num_tasks_) {
         int nextTask = current_task_num_++;
@@ -72,25 +68,21 @@ void TaskSystemParallelSpawn::doWork(IRunnable* runnable) {
 void TaskSystemParallelSpawn::run(IRunnable* runnable, int num_total_tasks) {
 
 
-    //
-    // TODO: CS149 students will modify the implementation of this
-    // method in Part A.  The implementation provided below runs all
-    // tasks sequentially on the calling thread.
-    //
-
-    // for (int i = 0; i < num_total_tasks; i++) {
-    //     runnable->runTask(i, num_total_tasks);
-    // }
+    //Initialize values
     max_threads_ = num_total_tasks; 
     total_num_tasks_ = num_total_tasks; 
     current_task_num_ = 0;
 
+    //Here, we make all of our threads
     std::vector<std::thread> threads(max_threads_);
 
+
+    //Launch every thread. Each thread runs tasks until all tasks are done. 
     for (int i = 0; i < max_threads_; ++i) {
         threads[i] = std::thread(&TaskSystemParallelSpawn::doWork, this, runnable);
     }
-
+    
+    //Do not return until all threads have joined (ie also returned)
     for (auto& thread : threads) {
         thread.join();
     }
