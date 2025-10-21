@@ -1,6 +1,10 @@
 #include "tasksys.h"
 #include <thread>
+#include <mutex>
 
+//debug 
+#include <cstdio>
+#include <iostream>
 
 IRunnable::~IRunnable() {}
 
@@ -109,29 +113,78 @@ const char* TaskSystemParallelThreadPoolSpinning::name() {
     return "Parallel + Thread Pool + Spin";
 }
 
-TaskSystemParallelThreadPoolSpinning::TaskSystemParallelThreadPoolSpinning(int num_threads): ITaskSystem(num_threads) {
-    //
-    // TODO: CS149 student implementations may decide to perform setup
-    // operations (such as thread pool construction) here.
-    // Implementations are free to add new class member variables
-    // (requiring changes to tasksys.h).
-    //
+void TaskSystemParallelThreadPoolSpinning::doWorkOrSpin() {
+    while (true) {
+        IRunnable* thread_runnable = nullptr;
+        int next_task;
+        {
+            std::lock_guard<std::mutex> lock(state_lock_);
+
+            if (is_function_returning_) return;
+
+            if (num_tasks_remaining_ > 0 && current_runnable_ != nullptr) {
+                next_task = --num_tasks_remaining_;
+                thread_runnable = current_runnable_;
+            }
+        }
+        if (thread_runnable && next_task >= 0) {
+            thread_runnable->runTask(next_task, total_tasks);
+
+            state_lock_.lock();
+            num_tasks_completed_++;
+
+            if (num_tasks_completed_ == total_tasks) {
+                are_tasks_running_ = false;
+                current_runnable_ = nullptr;
+            }
+            state_lock_.unlock();
+        } 
+    }
 }
 
-TaskSystemParallelThreadPoolSpinning::~TaskSystemParallelThreadPoolSpinning() {}
+TaskSystemParallelThreadPoolSpinning::TaskSystemParallelThreadPoolSpinning(int num_threads): ITaskSystem(num_threads) {
+    current_runnable_ = nullptr;
+    are_tasks_running_ = false;
+    is_function_returning_ = false;
+
+
+    for (int i = 0; i < num_threads; ++i) {
+        threads_.push_back(std::thread(&TaskSystemParallelThreadPoolSpinning::doWorkOrSpin, this));
+    }
+ 
+}
+
+TaskSystemParallelThreadPoolSpinning::~TaskSystemParallelThreadPoolSpinning() {
+    state_lock_.lock();
+    is_function_returning_ = true;
+    state_lock_.unlock();
+    
+    for (auto& thread : threads_) {
+
+        if (thread.joinable()) {
+            thread.join();
+        }
+    }
+}
 
 void TaskSystemParallelThreadPoolSpinning::run(IRunnable* runnable, int num_total_tasks) {
 
+    
+    state_lock_.lock();
+    current_runnable_ = runnable;
+    total_tasks = num_total_tasks;
+    num_tasks_remaining_ = num_total_tasks;
+    num_tasks_completed_ = 0;
+    are_tasks_running_ = true;
+    state_lock_.unlock();
 
-    //
-    // TODO: CS149 students will modify the implementation of this
-    // method in Part A.  The implementation provided below runs all
-    // tasks sequentially on the calling thread.
-    //
-
-    for (int i = 0; i < num_total_tasks; i++) {
-        runnable->runTask(i, num_total_tasks);
+    while (true) {
+        {
+            std::lock_guard<std::mutex> lock(state_lock_);
+            if (!are_tasks_running_) break;
+        }
     }
+    
 }
 
 TaskID TaskSystemParallelThreadPoolSpinning::runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
